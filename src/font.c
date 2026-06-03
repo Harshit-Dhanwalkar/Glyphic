@@ -6,10 +6,10 @@
 
 #include "font.h"
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
 /**
  * @brief Hardcoded font tracking array mapping index 0-94 to printable

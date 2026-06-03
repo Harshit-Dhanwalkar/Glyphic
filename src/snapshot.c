@@ -1,6 +1,13 @@
 /**
  * @file snapshot.c
- * @brief Implements high-resolution snapshot generation using stb_image_write.
+ * @brief Implements high-resolution snapshot that renders the ASCII grid output
+ *        (each character drawn with the 8x8 bitmap font), not the raw raster.
+ *
+ * BUG FIX: Previously the snapshot wrote a raw glyph bitmap, ignoring the
+ * ASCII art grid produced by the renderer.  Now it iterates over every cell
+ * in VirtualCanvas::grid, looks up the character in font8x8_basic, and blits
+ * its 8x8 pixel pattern into the output image – giving you a pixel-exact
+ * reproduction of what you see in the terminal.
  */
 
 #include "snapshot.h"
@@ -10,81 +17,63 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Configure header-only export symbols */
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
 void save_canvas_as_png(VirtualCanvas *vc, const char *text) {
-  int text_len = strlen(text);
-  if (text_len == 0 || !vc->line_map)
+  (void)text;
+
+  if (!vc || !vc->grid || vc->width <= 0 || vc->height <= 0)
     return;
 
-  // Resolve maximum wrapping lines to calculate target resolution boundaries
-  int max_line_idx = 0;
-  for (int i = 0; i < text_len; i++) {
-    if (vc->line_map[i] > max_line_idx) {
-      max_line_idx = vc->line_map[i];
-    }
-  }
-  int total_lines = max_line_idx + 1;
+  /* Each grid cell becomes an 8x8 block of pixels. */
+  int out_width = vc->width * 8;
+  int out_height = vc->height * 8;
 
-  int max_chars_per_line = vc->width;
-  int out_width = max_chars_per_line * 8;
-  int out_height = total_lines * 8;
-
-  u8 *img_data = calloc(out_width * out_height, 1);
-  if (!img_data)
+  /* Grayscale image – 1 byte per pixel, initialised to black (0). */
+  u8 *img = calloc((size_t)out_width * out_height, 1);
+  if (!img)
     return;
 
-  int current_col = 0;
-  int last_line_idx = 0;
+  for (int row = 0; row < vc->height; row++) {
+    for (int col = 0; col < vc->width; col++) {
+      char c = vc->grid[row * vc->width + col];
 
-  // Blit 8x8 font elements onto the output image array
-  for (int i = 0; i < text_len; i++) {
-    char c = text[i];
-    int line_idx = vc->line_map[i];
+      /* Map ASCII to font8x8_basic index. */
+      int font_idx = (int)c - 32;
+      if (font_idx < 0 || font_idx >= 95)
+        font_idx = 0; /* fallback to space */
 
-    // Reset column counter at a line wrap boundary
-    if (line_idx != last_line_idx) {
-      current_col = 0;
-      last_line_idx = line_idx;
-    }
+      int px_base_x = col * 8;
+      int px_base_y = row * 8;
 
-    if (current_col >= max_chars_per_line)
-      continue;
-
-    int font_idx = c - 32;
-    if (font_idx < 0 || font_idx >= 95)
-      font_idx = 31; // Fallback to Space for illegal characters
-
-    for (int gy = 0; gy < 8; gy++) {
-      u8 row_bits = font8x8_basic[font_idx][gy];
-      int py = line_idx * 8 + gy;
-      for (int gx = 0; gx < 8; gx++) {
-        if (row_bits & (0x80 >> gx)) {
-          int px = current_col * 8 + gx;
-          if (px < out_width && py < out_height) {
-            img_data[py * out_width + px] = 255;
+      for (int gy = 0; gy < 8; gy++) {
+        u8 row_bits = font8x8_basic[font_idx][gy];
+        for (int gx = 0; gx < 8; gx++) {
+          if (row_bits & (0x80 >> gx)) {
+            int px = px_base_x + gx;
+            int py = px_base_y + gy;
+            if (px < out_width && py < out_height)
+              img[py * out_width + px] = 255;
           }
         }
       }
     }
-    current_col++;
   }
 
-  // Generate unique file identifiers using local timestamps
-  char final_name[256];
+  /* Generate timestamped filename */
+  char filename[256];
   time_t t = time(NULL);
-  struct tm *tm = localtime(&t);
-  strftime(final_name, sizeof(final_name), "text_canvas_%Y%m%d_%H%M%S.png", tm);
+  struct tm *tm_info = localtime(&t);
+  strftime(filename, sizeof(filename), "saved_text_%Y%m%d_%H%M%S.png",
+           tm_info);
 
-  // Write out raw pixel maps down to disk file streams
-  if (stbi_write_png(final_name, out_width, out_height, 1, img_data,
-                     out_width)) {
-    printf("\033[%d;1H\033[2KSaved canvas snapshot to %s\n",
-           get_terminal_height() - 1, final_name);
+  if (stbi_write_png(filename, out_width, out_height, 1, img, out_width)) {
+    printf("\033[%d;1H\033[2KSaved ASCII snapshot to %s  (%dx%d px)\n",
+           get_terminal_height() - 1, filename, out_width, out_height);
     fflush(stdout);
     sleep(1);
   }
-  free(img_data);
+
+  free(img);
 }
