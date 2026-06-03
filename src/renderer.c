@@ -1,3 +1,9 @@
+/**
+ * @file renderer.c
+ * @brief Implements text rendering layout processing and terminal window
+ * painters.
+ */
+
 #include "renderer.h"
 #include <math.h>
 #include <stdio.h>
@@ -23,10 +29,11 @@ VirtualCanvas layout_and_render_string(string8 file, font_info *info,
                                        int term_width) {
   VirtualCanvas vc = {0};
   u32 len = strlen(text);
-  u32 metric_count = len + 1;
+  u32 metric_count = len + 1; // Include cursor end padding metrics room safely
   font_glyph *glyphs = malloc(metric_count * sizeof(font_glyph));
   f32 *glyph_widths = malloc(metric_count * sizeof(f32));
 
+  // Fetch geometric tracking advance states across each character item
   for (u32 i = 0; i < len; i++) {
     u32 g_id = font_glyph_index(file, info, (u8)text[i]);
     font_load_glyph(file, info, &glyphs[i], g_id);
@@ -42,6 +49,7 @@ VirtualCanvas layout_and_render_string(string8 file, font_info *info,
   glyph_widths[len] = (f32)default_adv * scale;
   memset(&glyphs[len], 0, sizeof(font_glyph));
 
+  // Establish vertical stride dimensions
   f32 scaled_ascent = (f32)info->ascent * scale;
   f32 scaled_descent = (f32)info->descent * scale;
   f32 line_height =
@@ -58,6 +66,7 @@ VirtualCanvas layout_and_render_string(string8 file, font_info *info,
   vc.line_map = malloc(metric_count * sizeof(int));
   f32 *glyph_x_positions = malloc(metric_count * sizeof(f32));
 
+  // Determine line wraps based on character advance metrics
   for (u32 i = 0; i <= len; i++) {
     if (cursor_x + glyph_widths[i] > max_needed_width && cursor_x > 0) {
       current_line++;
@@ -80,6 +89,7 @@ VirtualCanvas layout_and_render_string(string8 file, font_info *info,
   vc.grid = malloc(canvas_w * canvas_h);
   memset(vc.grid, ' ', canvas_w * canvas_h);
 
+  // Blit raster coverage maps onto the text character grid
   for (u32 i = 0; i < len; i++) {
     if (glyphs[i].num_points == 0) {
       font_free_glyph(&glyphs[i]);
@@ -126,18 +136,20 @@ VirtualCanvas layout_and_render_string(string8 file, font_info *info,
 
 void display_workspace(VirtualCanvas *vc, const char *text, int cursor_idx,
                        int terminal_height, int terminal_width) {
-  printf("\033[H");
+  printf("\033[H"); // Reset cursor to the top-left corner
   int minimap_reserve_rows = 6;
   int max_allowed_lines = terminal_height - minimap_reserve_rows - 4;
   int display_h = vc->height;
   if (display_h > max_allowed_lines)
     display_h = max_allowed_lines;
 
+  // Clear workspace rows cleanly
   for (int y = 0; y < terminal_height; y++) {
     printf("\033[%d;1H\033[2K", y + 1);
   }
   printf("\033[H");
 
+  // Output main text workspace
   for (int y = 0; y < display_h; y++) {
     printf("\033[%d;1H", y + 1);
     for (int x = 0; x < vc->width && x < terminal_width; x++) {
@@ -145,6 +157,7 @@ void display_workspace(VirtualCanvas *vc, const char *text, int cursor_idx,
     }
   }
 
+  // Draw upper boundary header for interactive sentence minimap panel
   int minimap_start_row = terminal_height - minimap_reserve_rows - 3;
   printf("\033[%d;1H+", minimap_start_row);
   int title_len = 11;
@@ -163,6 +176,7 @@ void display_workspace(VirtualCanvas *vc, const char *text, int cursor_idx,
   int current_col_offset = 0;
   int usable_width = terminal_width - 4;
 
+  // Repaint wrapped string blocks to match rendering layout positions
   for (int i = 0; i <= text_len; i++) {
     int target_line = (i <= text_len) ? vc->line_map[i] : current_map_line;
     if (target_line != current_map_line) {
@@ -186,7 +200,7 @@ void display_workspace(VirtualCanvas *vc, const char *text, int cursor_idx,
     if (current_col_offset >= usable_width)
       continue;
 
-    if (i == cursor_idx) {
+    if (i == cursor_idx) { // Invert active character color to simulate cursor
       printf("\033[7m%c\033[0m", text[i] == ' ' ? '_' : text[i]);
     } else {
       putchar(text[i]);
@@ -194,6 +208,8 @@ void display_workspace(VirtualCanvas *vc, const char *text, int cursor_idx,
     current_col_offset++;
   }
 
+  // Append background trailing dots to represent empty terminal space
+  // boundaries
   if (map_row_count > 0 && map_row_count <= minimap_reserve_rows) {
     if (cursor_idx == text_len && current_col_offset < usable_width) {
       printf("\033[7m \033[0m");
@@ -207,6 +223,7 @@ void display_workspace(VirtualCanvas *vc, const char *text, int cursor_idx,
     printf("\033[0m |");
   }
 
+  // Draw bottom boundary frame footer
   printf("\033[%d;1H+", minimap_start_row + map_row_count + 1);
   for (int i = 0; i < terminal_width - 2; i++)
     putchar('-');
