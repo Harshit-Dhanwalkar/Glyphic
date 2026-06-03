@@ -8,8 +8,14 @@ Convert any TrueType font into interactive ASCII art with per‑character shapin
 
 # TODO
 
-- [ ] Add scroll bar with keybinds.
+- [x] Add scroll bar with keybinds.
+- [ ] Undo/redo
+- [ ] Unicode / UTF-8 input support.
+- [ ] Clipboard paste
+- [ ] Pre-rasterize all 95 printable ASCII glyphs at the current em size into a lookup table so re-renders on keypress are instant instead of re-rasterizing every frame
 
 ---
 
 Project is under [LICENSE](LICENSE).
+
+---
