@@ -1,4 +1,5 @@
 #include "font.h"
+#include "listfonts.h"
 #include "renderer.h"
 #include "snapshot.h"
 #include <math.h>
@@ -45,15 +46,33 @@ static void drain_seq(void) {
 static int vp_rows(int th) { return th - MINIMAP_CONTENT_ROWS - 3; }
 
 int main(int argc, char **argv) {
-  if (argc < 2) {
-    fprintf(stderr, "Usage: %s <font.ttf> [em_size]\n", argv[0]);
-    return 1;
+  string8 file = {0};
+  char font_path[512] = "";
+
+  if (argc >= 2) {
+    strncpy(font_path, argv[1], sizeof(font_path) - 1);
+    file = read_file(font_path);
   }
 
-  string8 file = read_file(argv[1]);
+  /* If no file provided or loading failed,
+  run the interactive selector menu */
   if (!file.str) {
-    fprintf(stderr, "Error: cannot open '%s'\n", argv[1]);
-    return 1;
+    SystemFont fonts[MAX_FONTS];
+    int font_count = get_system_ttf_fonts(fonts, MAX_FONTS);
+
+    if (font_count == 0) {
+      fprintf(stderr, "No system TrueType fonts found!\n");
+      return 1;
+    }
+
+    int chosen_index = select_font_menu(fonts, font_count);
+    strncpy(font_path, fonts[chosen_index].path, sizeof(font_path) - 1);
+
+    file = read_file(font_path);
+    if (!file.str) {
+      fprintf(stderr, "Error: cannot open selected font '%s'\n", font_path);
+      return 1;
+    }
   }
 
   font_info font = {0};
